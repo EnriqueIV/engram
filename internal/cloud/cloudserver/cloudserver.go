@@ -15,24 +15,26 @@ import (
 
 	"github.com/Gentleman-Programming/engram/internal/cloud/auth"
 	"github.com/Gentleman-Programming/engram/internal/cloud/cloudstore"
+	"github.com/Gentleman-Programming/engram/internal/cloud/dashboard"
 )
 
 // ─── CloudServer ────────────────────────────────────────────────────────────
 
 // CloudServer provides the HTTP API for Engram cloud mode.
 type CloudServer struct {
-	store  *cloudstore.CloudStore
-	auth   *auth.Service
-	mux    *http.ServeMux
-	port   int
-	listen func(network, address string) (net.Listener, error)
-	serve  func(net.Listener, http.Handler) error
-	now    func() time.Time
-	limit  *authRateLimiter
+	store   *cloudstore.CloudStore
+	auth    *auth.Service
+	mux     *http.ServeMux
+	port    int
+	listen  func(network, address string) (net.Listener, error)
+	serve   func(net.Listener, http.Handler) error
+	now     func() time.Time
+	limit   *authRateLimiter
+	dashCfg dashboard.DashboardConfig
 }
 
 // New creates a new CloudServer and registers all routes.
-func New(store *cloudstore.CloudStore, authSvc *auth.Service, port int) *CloudServer {
+func New(store *cloudstore.CloudStore, authSvc *auth.Service, port int, opts ...Option) *CloudServer {
 	srv := &CloudServer{
 		store:  store,
 		auth:   authSvc,
@@ -41,10 +43,23 @@ func New(store *cloudstore.CloudStore, authSvc *auth.Service, port int) *CloudSe
 		serve:  http.Serve,
 		now:    time.Now,
 	}
+	for _, opt := range opts {
+		opt(srv)
+	}
 	srv.limit = newAuthRateLimiter(func() time.Time { return srv.now() })
 	srv.mux = http.NewServeMux()
 	srv.routes()
 	return srv
+}
+
+// Option configures a CloudServer.
+type Option func(*CloudServer)
+
+// WithDashboard enables the embedded web dashboard with the given config.
+func WithDashboard(cfg dashboard.DashboardConfig) Option {
+	return func(s *CloudServer) {
+		s.dashCfg = cfg
+	}
 }
 
 // Start binds to the configured port and serves HTTP traffic. It matches
@@ -100,6 +115,9 @@ func (s *CloudServer) routes() {
 	// Search & context (auth required)
 	s.mux.HandleFunc("GET /sync/search", s.withAuth(s.handleSearch))
 	s.mux.HandleFunc("GET /sync/context", s.withAuth(s.handleContext))
+
+	// Dashboard — embedded web UI
+	dashboard.Mount(s.mux, s.store, s.auth, s.dashCfg)
 }
 
 // ─── Health ─────────────────────────────────────────────────────────────────

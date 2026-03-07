@@ -1,0 +1,516 @@
+package dashboard
+
+import (
+	"fmt"
+	"github.com/Gentleman-Programming/engram/internal/cloud/cloudstore"
+)
+
+// ─── Shared Components ──────────────────────────────────────────────────────
+
+// NavTabs renders the navigation tab bar.
+// activeTab should be one of: "dashboard", "browser", "projects", "contributors", "admin".
+templ NavTabs(activeTab string, isAdmin bool) {
+	<div role="tablist">
+		@navTab("/dashboard/", "Dashboard", "dashboard", activeTab)
+		@navTab("/dashboard/browser", "Browser", "browser", activeTab)
+		@navTab("/dashboard/projects", "Projects", "projects", activeTab)
+		@navTab("/dashboard/contributors", "Contributors", "contributors", activeTab)
+		if isAdmin {
+			@navTab("/dashboard/admin", "Admin", "admin", activeTab)
+		}
+	</div>
+}
+
+// navTab renders a single nav tab link.
+templ navTab(href string, label string, tabID string, activeTab string) {
+	if tabID == activeTab {
+		<a href={ templ.SafeURL(href) } role="tab" aria-selected="true">{ label }</a>
+	} else {
+		<a href={ templ.SafeURL(href) } role="tab" aria-selected="false">{ label }</a>
+	}
+}
+
+// StatusBadge renders a colored status badge.
+// variant should be one of: "success", "warning", "danger", "muted".
+templ StatusBadge(label string, variant string) {
+	<span class={ "badge badge-" + variant }>{ label }</span>
+}
+
+// EmptyState renders a centered empty-state placeholder.
+templ EmptyState(title string, message string) {
+	<div class="empty-state">
+		<h3>{ title }</h3>
+		<p>{ message }</p>
+	</div>
+}
+
+// ─── Phase 4: Dashboard Overview ────────────────────────────────────────────
+
+// DashboardHome renders the main dashboard landing content with project stats.
+templ DashboardHome(userID string) {
+	<section>
+		<h2>Welcome to Engram Cloud</h2>
+		<p>Your organizational knowledge platform is ready.</p>
+		<div id="dashboard-stats" hx-get="/dashboard/stats" hx-trigger="load" hx-swap="innerHTML">
+			<p class="htmx-indicator">Loading stats...</p>
+		</div>
+	</section>
+}
+
+// DashboardStatsPartial renders the project stats table, loaded via htmx.
+templ DashboardStatsPartial(stats []cloudstore.ProjectStat, projects []string) {
+	if len(stats) == 0 {
+		@EmptyState("No Projects Yet", "Project stats will appear here once data flows in.")
+	} else {
+		<div class="dashboard-grid">
+			<div class="stat-card">
+				<h4>Projects Enrolled</h4>
+				<div class="stat-badges">
+					for _, p := range projects {
+						@StatusBadge(p, "success")
+					}
+				</div>
+			</div>
+		</div>
+		<table>
+			<thead>
+				<tr>
+					<th>Project</th>
+					<th>Sessions</th>
+					<th>Observations</th>
+					<th>Prompts</th>
+					<th>Last Activity</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, s := range stats {
+					<tr>
+						<td>
+							<a href={ templ.SafeURL("/dashboard/projects/" + s.Project) }>{ s.Project }</a>
+						</td>
+						<td>{ fmt.Sprint(s.SessionCount) }</td>
+						<td>{ fmt.Sprint(s.ObservationCount) }</td>
+						<td>{ fmt.Sprint(s.PromptCount) }</td>
+						<td>
+							if s.LastActivity != nil {
+								{ *s.LastActivity }
+							} else {
+								<span class="muted">—</span>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+// ─── Phase 5: Knowledge Browser ─────────────────────────────────────────────
+
+// BrowserPage renders the knowledge browser with subtabs and filter controls.
+templ BrowserPage(projects []string, activeProject string, search string) {
+	<section>
+		<h2>Knowledge Browser</h2>
+		<div class="browser-controls">
+			<select id="browser-project" name="project" hx-get="/dashboard/browser/observations" hx-target="#browser-content" hx-swap="innerHTML" hx-include="#browser-search">
+				<option value="">All Projects</option>
+				for _, p := range projects {
+					if p == activeProject {
+						<option value={ p } selected>{ p }</option>
+					} else {
+						<option value={ p }>{ p }</option>
+					}
+				}
+			</select>
+			<input
+				id="browser-search"
+				type="search"
+				name="q"
+				placeholder="Search..."
+				value={ search }
+				hx-get="/dashboard/browser/observations"
+				hx-target="#browser-content"
+				hx-swap="innerHTML"
+				hx-trigger="keyup changed delay:300ms"
+				hx-include="#browser-project"
+			/>
+		</div>
+		<div class="browser-subtabs" role="tablist">
+			<a role="tab" aria-selected="true" class="active"
+				hx-get="/dashboard/browser/observations"
+				hx-target="#browser-content"
+				hx-swap="innerHTML"
+				hx-include="#browser-project, #browser-search">Observations</a>
+			<a role="tab" aria-selected="false"
+				hx-get="/dashboard/browser/sessions"
+				hx-target="#browser-content"
+				hx-swap="innerHTML"
+				hx-include="#browser-project, #browser-search">Sessions</a>
+			<a role="tab" aria-selected="false"
+				hx-get="/dashboard/browser/prompts"
+				hx-target="#browser-content"
+				hx-swap="innerHTML"
+				hx-include="#browser-project, #browser-search">Prompts</a>
+		</div>
+		<div id="browser-content" hx-get="/dashboard/browser/observations" hx-trigger="load" hx-swap="innerHTML" hx-include="#browser-project, #browser-search">
+			<p class="htmx-indicator">Loading...</p>
+		</div>
+	</section>
+}
+
+// ObservationsPartial renders the observations list, loaded as an htmx partial.
+templ ObservationsPartial(observations []cloudstore.CloudObservation) {
+	if len(observations) == 0 {
+		@EmptyState("No Observations", "No observations match the current filters.")
+	} else {
+		<div class="observation-list">
+			for _, o := range observations {
+				<article class="card">
+					<header>
+						<strong>{ o.Title }</strong>
+						@StatusBadge(o.Type, typeBadgeVariant(o.Type))
+						if o.Project != nil {
+							@StatusBadge(*o.Project, "muted")
+						}
+					</header>
+					<p>{ truncateContent(o.Content, 200) }</p>
+					<footer>
+						<small>{ o.CreatedAt }</small>
+						<small>Scope: { o.Scope }</small>
+					</footer>
+				</article>
+			}
+		</div>
+	}
+}
+
+// SessionsPartial renders the sessions list, loaded as an htmx partial.
+templ SessionsPartial(sessions []cloudstore.CloudSessionSummary) {
+	if len(sessions) == 0 {
+		@EmptyState("No Sessions", "No sessions match the current filters.")
+	} else {
+		<table>
+			<thead>
+				<tr>
+					<th>Project</th>
+					<th>Started</th>
+					<th>Ended</th>
+					<th>Observations</th>
+					<th>Summary</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, s := range sessions {
+					<tr>
+						<td>{ s.Project }</td>
+						<td>{ s.StartedAt }</td>
+						<td>
+							if s.EndedAt != nil {
+								{ *s.EndedAt }
+							} else {
+								@StatusBadge("Active", "success")
+							}
+						</td>
+						<td>{ fmt.Sprint(s.ObservationCount) }</td>
+						<td>
+							if s.Summary != nil {
+								{ truncateContent(*s.Summary, 100) }
+							} else {
+								<span class="muted">—</span>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+// PromptsPartial renders the prompts list, loaded as an htmx partial.
+templ PromptsPartial(prompts []cloudstore.CloudPrompt) {
+	if len(prompts) == 0 {
+		@EmptyState("No Prompts", "No prompts match the current filters.")
+	} else {
+		<div class="prompt-list">
+			for _, p := range prompts {
+				<article class="card">
+					<p>{ truncateContent(p.Content, 300) }</p>
+					<footer>
+						<small>{ p.CreatedAt }</small>
+						if p.Project != "" {
+							@StatusBadge(p.Project, "muted")
+						}
+					</footer>
+				</article>
+			}
+		</div>
+	}
+}
+
+// ─── Phase 6: Projects Tab ──────────────────────────────────────────────────
+
+// ProjectsPage renders the projects list view.
+templ ProjectsPage(stats []cloudstore.ProjectStat) {
+	<section>
+		<h2>Projects</h2>
+		if len(stats) == 0 {
+			@EmptyState("No Projects", "Projects will appear here once data is synced.")
+		} else {
+			<div class="project-grid">
+				for _, s := range stats {
+					<article class="card project-card">
+						<header>
+							<h3>
+								<a href={ templ.SafeURL("/dashboard/projects/" + s.Project) }>{ s.Project }</a>
+							</h3>
+						</header>
+						<div class="project-stats">
+							<div class="stat">
+								<span class="stat-value">{ fmt.Sprint(s.SessionCount) }</span>
+								<span class="stat-label">Sessions</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{ fmt.Sprint(s.ObservationCount) }</span>
+								<span class="stat-label">Observations</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{ fmt.Sprint(s.PromptCount) }</span>
+								<span class="stat-label">Prompts</span>
+							</div>
+						</div>
+						<footer>
+							if s.LastActivity != nil {
+								<small>Last activity: { *s.LastActivity }</small>
+							}
+						</footer>
+					</article>
+				}
+			</div>
+		}
+	</section>
+}
+
+// ProjectDetailPage renders the detail view for a single project.
+templ ProjectDetailPage(project string, stats *cloudstore.ProjectStat, sessions []cloudstore.CloudSessionSummary, observations []cloudstore.CloudObservation, prompts []cloudstore.CloudPrompt) {
+	<section>
+		<h2>
+			<a href="/dashboard/projects">Projects</a> / { project }
+		</h2>
+		if stats != nil {
+			<div class="dashboard-grid">
+				<div class="stat-card">
+					<span class="stat-value">{ fmt.Sprint(stats.SessionCount) }</span>
+					<span class="stat-label">Sessions</span>
+				</div>
+				<div class="stat-card">
+					<span class="stat-value">{ fmt.Sprint(stats.ObservationCount) }</span>
+					<span class="stat-label">Observations</span>
+				</div>
+				<div class="stat-card">
+					<span class="stat-value">{ fmt.Sprint(stats.PromptCount) }</span>
+					<span class="stat-label">Prompts</span>
+				</div>
+			</div>
+		}
+		<h3>Recent Sessions</h3>
+		@SessionsPartial(sessions)
+		<h3>Recent Observations</h3>
+		@ObservationsPartial(observations)
+		<h3>Recent Prompts</h3>
+		@PromptsPartial(prompts)
+	</section>
+}
+
+// ─── Phase 7: Contributors Tab ──────────────────────────────────────────────
+
+// ContributorsPage renders the contributors list view.
+templ ContributorsPage(contributors []cloudstore.ContributorStat) {
+	<section>
+		<h2>Contributors</h2>
+		if len(contributors) == 0 {
+			@EmptyState("No Contributors", "Contributor activity will appear once users sync data.")
+		} else {
+			<table>
+				<thead>
+					<tr>
+						<th>Username</th>
+						<th>Email</th>
+						<th>Sessions</th>
+						<th>Observations</th>
+						<th>Last Sync</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, c := range contributors {
+						<tr>
+							<td>{ c.Username }</td>
+							<td>{ c.Email }</td>
+							<td>{ fmt.Sprint(c.SessionCount) }</td>
+							<td>{ fmt.Sprint(c.ObservationCount) }</td>
+							<td>
+								if c.LastSync != nil {
+									{ *c.LastSync }
+								} else {
+									<span class="muted">Never</span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</section>
+}
+
+// ─── Phase 8: Admin Views ───────────────────────────────────────────────────
+
+// AdminPage renders the admin dashboard landing with sub-navigation.
+templ AdminPage(health *cloudstore.SystemHealthInfo) {
+	<section>
+		<h2>Admin</h2>
+		<div class="admin-nav">
+			<a href="/dashboard/admin" class="active">Overview</a>
+			<a href="/dashboard/admin/users">Users</a>
+			<a href="/dashboard/admin/health">System Health</a>
+		</div>
+		if health != nil {
+			<div class="dashboard-grid">
+				<div class="stat-card">
+					<span class="stat-value">
+						if health.DBConnected {
+							@StatusBadge("Connected", "success")
+						} else {
+							@StatusBadge("Disconnected", "danger")
+						}
+					</span>
+					<span class="stat-label">Database</span>
+				</div>
+				<div class="stat-card">
+					<span class="stat-value">{ fmt.Sprint(health.TotalUsers) }</span>
+					<span class="stat-label">Users</span>
+				</div>
+				<div class="stat-card">
+					<span class="stat-value">{ fmt.Sprint(health.TotalSessions) }</span>
+					<span class="stat-label">Sessions</span>
+				</div>
+				<div class="stat-card">
+					<span class="stat-value">{ fmt.Sprint(health.TotalMemories) }</span>
+					<span class="stat-label">Memories</span>
+				</div>
+				<div class="stat-card">
+					<span class="stat-value">{ fmt.Sprint(health.TotalPrompts) }</span>
+					<span class="stat-label">Prompts</span>
+				</div>
+				<div class="stat-card">
+					<span class="stat-value">{ fmt.Sprint(health.TotalMutations) }</span>
+					<span class="stat-label">Mutations</span>
+				</div>
+			</div>
+		}
+	</section>
+}
+
+// AdminUsersPage renders the user management view.
+templ AdminUsersPage(users []cloudstore.CloudUser) {
+	<section>
+		<h2>Admin</h2>
+		<div class="admin-nav">
+			<a href="/dashboard/admin">Overview</a>
+			<a href="/dashboard/admin/users" class="active">Users</a>
+			<a href="/dashboard/admin/health">System Health</a>
+		</div>
+		<h3>Registered Users</h3>
+		if len(users) == 0 {
+			@EmptyState("No Users", "No users have registered yet.")
+		} else {
+			<table>
+				<thead>
+					<tr>
+						<th>Username</th>
+						<th>Email</th>
+						<th>API Key</th>
+						<th>Created</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, u := range users {
+						<tr>
+							<td>{ u.Username }</td>
+							<td>{ u.Email }</td>
+							<td>
+								if u.APIKeyHash != nil {
+									@StatusBadge("Active", "success")
+								} else {
+									@StatusBadge("None", "muted")
+								}
+							</td>
+							<td>{ u.CreatedAt }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</section>
+}
+
+// AdminHealthPage renders the system health detail view.
+templ AdminHealthPage(health *cloudstore.SystemHealthInfo) {
+	<section>
+		<h2>Admin</h2>
+		<div class="admin-nav">
+			<a href="/dashboard/admin">Overview</a>
+			<a href="/dashboard/admin/users">Users</a>
+			<a href="/dashboard/admin/health" class="active">System Health</a>
+		</div>
+		<h3>System Health</h3>
+		if health != nil {
+			<table>
+				<tbody>
+					<tr>
+						<th>Database</th>
+						<td>
+							if health.DBConnected {
+								@StatusBadge("Connected", "success")
+							} else {
+								@StatusBadge("Disconnected", "danger")
+							}
+						</td>
+					</tr>
+					<tr>
+						<th>DB Version</th>
+						<td>{ health.DBVersion }</td>
+					</tr>
+					<tr>
+						<th>Total Users</th>
+						<td>{ fmt.Sprint(health.TotalUsers) }</td>
+					</tr>
+					<tr>
+						<th>Total Sessions</th>
+						<td>{ fmt.Sprint(health.TotalSessions) }</td>
+					</tr>
+					<tr>
+						<th>Total Memories</th>
+						<td>{ fmt.Sprint(health.TotalMemories) }</td>
+					</tr>
+					<tr>
+						<th>Total Prompts</th>
+						<td>{ fmt.Sprint(health.TotalPrompts) }</td>
+					</tr>
+					<tr>
+						<th>Total Mutations</th>
+						<td>{ fmt.Sprint(health.TotalMutations) }</td>
+					</tr>
+				</tbody>
+			</table>
+		} else {
+			@EmptyState("Unavailable", "Could not retrieve system health information.")
+		}
+	</section>
+}
+
+// AdminForbidden renders the 403 page for non-admin users.
+templ AdminForbidden() {
+	<section>
+		@EmptyState("Access Denied", "You do not have admin privileges.")
+	</section>
+}

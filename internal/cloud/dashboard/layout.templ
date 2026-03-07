@@ -1,0 +1,39 @@
+package dashboard
+
+// Layout wraps page content in the base HTML shell with nav, head, and footer.
+// activeTab should be one of: "dashboard", "browser", "projects", "contributors", "admin".
+templ Layout(title string, username string, activeTab string, isAdmin bool, content templ.Component) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } — Engram Cloud</title>
+			<link rel="stylesheet" href="/dashboard/static/pico.min.css"/>
+			<link rel="stylesheet" href="/dashboard/static/styles.css"/>
+			<script src="/dashboard/static/htmx.min.js"></script>
+		</head>
+		<body>
+			<header>
+				<a href="/dashboard/" class="brand">Engram Cloud</a>
+				<div class="user-info">
+					<span>{ username }</span>
+					<form method="post" action="/dashboard/logout" style="margin:0">
+						<button type="submit" class="outline secondary" style="padding:0.25rem 0.75rem;font-size:0.8rem;">
+							Logout
+						</button>
+					</form>
+				</div>
+			</header>
+			<nav>
+				@NavTabs(activeTab, isAdmin)
+			</nav>
+			<main>
+				@content
+			</main>
+			<footer>
+				<small>Engram Cloud Dashboard</small>
+			</footer>
+		</body>
+	</html>
+}

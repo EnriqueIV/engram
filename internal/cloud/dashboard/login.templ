@@ -1,0 +1,49 @@
+package dashboard
+
+// LoginPage renders the standalone login page (no layout wrapper).
+templ LoginPage(errorMsg string) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>Login — Engram Cloud</title>
+			<link rel="stylesheet" href="/dashboard/static/pico.min.css"/>
+			<link rel="stylesheet" href="/dashboard/static/styles.css"/>
+		</head>
+		<body>
+			<main>
+				<div class="login-container">
+					<h1>Engram Cloud</h1>
+					if errorMsg != "" {
+						<div class="login-error" role="alert">
+							{ errorMsg }
+						</div>
+					}
+					<form method="post" action="/dashboard/login">
+						<label>
+							Username or Email
+							<input
+								type="text"
+								name="identifier"
+								placeholder="username or email"
+								required
+								autofocus
+							/>
+						</label>
+						<label>
+							Password
+							<input
+								type="password"
+								name="password"
+								placeholder="password"
+								required
+							/>
+						</label>
+						<button type="submit">Sign In</button>
+					</form>
+				</div>
+			</main>
+		</body>
+	</html>
+}
